@@ -17,30 +17,43 @@ A containerized MCP (Model Context Protocol) server that converts a local export
 - **Security**: SQL queries are restricted to SELECT operations only
 - **Resources**: Export data as CSV files through MCP resources
 
+## TLDR: Talk to your Quicken data in ChatGPT, Claude or ollama!
+
+![Personal Finance advisor](<img/Claude Example.png>)
+
 ## Quick Start
 
 ### Using Docker (Recommended)
 
 1. **Build the container:**
    ```bash
-   docker build -t quicken-mcp .
+   docker build -t quicken-mcp-server .
    ```
 
-2. **Run with stdio transport (default):**
-   ```bash
-   docker run --rm \
-     -v "/path/to/your/qif:/data:ro" \
-     --network host \
-     quicken-mcp --qif /data/yourfile.qif
-   ```
+2. **Register the MCP in your LLM client config**
 
-3. **Run with SSE transport:**
-   ```bash
-   docker run --rm \
-     -v "/path/to/your/qif:/data:ro" \
-     --network host \
-     quicken-mcp --qif /data/yourfile.qif --server-mode sse --listen 127.0.0.1:8700
-   ```
+    Example of `claude-desktop-config.json` entry:
+
+    ```json
+        "quicken-mcp": {
+          "command": "docker",
+          "args": [
+            "run",
+            "-i",
+            "--rm",
+            "-v",
+            "<path>/data:/data:ro",
+            "quicken-mcp-server",
+            "--qif",
+            "/data/personal-data.qif"
+          ],
+          "env": {}
+        }
+    ```
+
+    In this example, I have exported my quicken data into the QIF format and named it "personal-data.qif". I then placed it into a folder called "data" and made that folder available to the docker image as a volume also named "data".
+
+
 
 ### Local Development
 
