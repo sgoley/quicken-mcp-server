@@ -58,8 +58,9 @@ def setup_duckdb(memory_limit: str):
     # Configure memory limit
     conn.execute(f"PRAGMA memory_limit='{memory_limit}'")
 
-    # Enable progress bar for long operations
-    conn.execute("PRAGMA enable_progress_bar")
+    # NOTE: `PRAGMA enable_progress_bar` is intentionally NOT enabled. It spawns a
+    # native renderer thread that (a) triggers a fatal GIL crash with recent DuckDB
+    # builds and (b) could write to stdout and corrupt the MCP stdio JSON-RPC stream.
 
     # Optimize for analytics workload
     conn.execute("PRAGMA threads=4")
@@ -67,8 +68,33 @@ def setup_duckdb(memory_limit: str):
     return conn
 
 
-async def main():
-    """Main application entry point."""
+async def _serve(mcp_server, config):
+    """Run the MCP server in the requested transport mode (async part only)."""
+    if config.server_mode == "stdio":
+        logging.getLogger(__name__).info("Starting MCP server in stdio mode")
+        await mcp_server.serve_stdio()
+
+    elif config.server_mode == "sse":
+        logging.getLogger(__name__).info(
+            f"Starting MCP server in SSE mode on {config.listen_host}:{config.listen_port}"
+        )
+        await mcp_server.serve_sse(config.listen_host, config.listen_port)
+
+    else:
+        logging.getLogger(__name__).error(f"Unknown server mode: {config.server_mode}")
+        sys.exit(1)
+
+
+def main():
+    """Main application entry point.
+
+    The QIF parse + DuckDB load are BLOCKING and must run synchronously in the
+    main thread, BEFORE the asyncio event loop is started. Running the DuckDB
+    load inside the event loop deadlocks on Windows' Proactor loop (DuckDB
+    releases the GIL during long operations). Only the transport serving is
+    async, so we enter asyncio.run() with just that.
+    """
+    db_conn = None
     try:
         # Parse configuration
         config = parse_args()
@@ -89,7 +115,7 @@ async def main():
         # Setup DuckDB
         db_conn = setup_duckdb(config.memory_limit)
 
-        # Load QIF data
+        # Load QIF data (synchronous, main thread — NOT inside the event loop)
         logger.info("Loading QIF data into database...")
         try:
             load_stats = load_qif_to_duckdb(config.qif_path, db_conn)
@@ -99,20 +125,9 @@ async def main():
             logger.error(f"Failed to load QIF data: {e}")
             sys.exit(1)
 
-        # Create and start MCP server
+        # Create the MCP server and serve (only the serving is async)
         mcp_server = QuickenMCPServer(db_conn)
-
-        if config.server_mode == "stdio":
-            logger.info("Starting MCP server in stdio mode")
-            await mcp_server.serve_stdio()
-
-        elif config.server_mode == "sse":
-            logger.info(f"Starting MCP server in SSE mode on {config.listen_host}:{config.listen_port}")
-            await mcp_server.serve_sse(config.listen_host, config.listen_port)
-
-        else:
-            logger.error(f"Unknown server mode: {config.server_mode}")
-            sys.exit(1)
+        asyncio.run(_serve(mcp_server, config))
 
     except KeyboardInterrupt:
         logging.info("Server stopped by user")
@@ -124,12 +139,17 @@ async def main():
     finally:
         # Clean up database connection
         try:
-            if 'db_conn' in locals():
+            if db_conn is not None:
                 db_conn.close()
                 logging.info("Database connection closed")
-        except:
+        except Exception:
             pass
 
 
+def main_cli():
+    """Synchronous entry point for the console script."""
+    main()
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

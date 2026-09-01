@@ -1,8 +1,14 @@
 # Core dependencies
-mcp>=0.5.0
+# NOTE: pinned to mcp 1.x — the low-level Server decorator API used in
+# app/server.py (list_tools/call_tool/list_resources/read_resource) was removed
+# in mcp 2.x.
+mcp>=1.9,<2
 duckdb>=0.9.0
 starlette>=0.27.0
 uvicorn[standard]>=0.23.0
+# Required for fast bulk DataFrame ingestion into DuckDB (see app/qif_loader.py).
+# Also stops DuckDB's per-value optional-import probing from thrashing sys.path.
+pandas>=2.0.0
 
 # Development dependencies (optional)
 pytest>=7.0.0

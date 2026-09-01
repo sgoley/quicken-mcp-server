@@ -34,7 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-quicken-mcp-server = "app.main:main"
+quicken-mcp-server = "app.main:main_cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
