@@ -213,7 +213,7 @@ class QIFParser:
                     transaction['splits'][-1]['memo'] = value
 
         # Only return transaction if it has required fields
-        if 'date' in transaction and 'amount' in transaction:
+        if transaction.get('date') is not None and 'amount' in transaction:
             return transaction
 
         return None
@@ -222,6 +222,20 @@ class QIFParser:
         """Parse various date formats into ISO format."""
         if not date_str:
             return None
+
+        date_str = date_str.strip()
+
+        # Handle Quicken's non-standard apostrophe format: M/D'YY or M/ D'YY or MM/DD'YY
+        # Examples: "1/ 1'24", "11/6'23", "12/31'24"
+        apostrophe_match = re.match(r"^(\d{1,2})/ ?(\d{1,2})'(\d{2})$", date_str)
+        if apostrophe_match:
+            month, day, year = apostrophe_match.groups()
+            full_year = 2000 + int(year)
+            try:
+                dt = datetime(full_year, int(month), int(day))
+                return dt.strftime('%Y-%m-%d')
+            except ValueError:
+                pass
 
         # Common QIF date formats
         formats = [
@@ -266,13 +280,15 @@ class QIFParser:
 
         # Check common date patterns
         date_patterns = [
-            r'^\d{2}/\d{2}/\d{2}$',    # MM/DD/YY
-            r'^\d{2}/\d{2}/\d{4}$',    # MM/DD/YYYY
-            r'^\d{1}/\d{2}/\d{2}$',    # M/DD/YY
-            r'^\d{1}/\d{1}/\d{2}$',    # M/D/YY
-            r'^\d{2}/\d{1}/\d{2}$',    # MM/D/YY
-            r'^\d{2}-\d{2}-\d{2}$',    # MM-DD-YY
-            r'^\d{4}-\d{2}-\d{2}$',    # YYYY-MM-DD
+            r'^\d{2}/\d{2}/\d{2}$',        # MM/DD/YY
+            r'^\d{2}/\d{2}/\d{4}$',        # MM/DD/YYYY
+            r'^\d{1}/\d{2}/\d{2}$',        # M/DD/YY
+            r'^\d{1}/\d{1}/\d{2}$',        # M/D/YY
+            r'^\d{2}/\d{1}/\d{2}$',        # MM/D/YY
+            r'^\d{1}/\d{2}/\d{4}$',        # M/DD/YYYY
+            r'^\d{2}-\d{2}-\d{2}$',        # MM-DD-YY
+            r'^\d{4}-\d{2}-\d{2}$',        # YYYY-MM-DD
+            r"^\d{1,2}/ ?\d{1,2}'\d{2}$",  # M/D'YY or M/ D'YY (Quicken apostrophe format)
         ]
 
         for pattern in date_patterns:
